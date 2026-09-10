@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import json
 import sys
+from importlib.resources import files
 from pathlib import Path
+
+from jsonschema import Draft202012Validator
 
 from policyengine.provenance.manifest import (
     DataReleaseManifestUnavailableError,
@@ -34,16 +37,24 @@ BUNDLE_TRO_DIR = REPO_ROOT / "src" / "policyengine" / "data" / "bundle"
 def regenerate_all() -> tuple[list[Path], list[tuple[str, Path, str]]]:
     written: list[Path] = []
     regressions: list[tuple[str, Path, str]] = []
-    for tro_path, payload in generated_tros():
+    payloads = generated_tros()
+    BUNDLE_TRO_DIR.mkdir(parents=True, exist_ok=True)
+    for tro_path, payload in payloads:
         tro_path.write_bytes(payload)
         written.append(tro_path)
     return written, regressions
 
 
 def generated_tros() -> list[tuple[Path, bytes]]:
+    """Prepare and schema-validate every serialized country TRO without writes."""
     payloads: list[tuple[Path, bytes]] = []
     bundle = json.loads(BUNDLE_MANIFEST.read_text())
-    BUNDLE_TRO_DIR.mkdir(parents=True, exist_ok=True)
+    schema = json.loads(
+        files("policyengine")
+        .joinpath("data", "schemas", "trace_tro.schema.json")
+        .read_text()
+    )
+    validator = Draft202012Validator(schema)
     for country_id in sorted(bundle.get("data_releases", {})):
         tro_path = BUNDLE_TRO_DIR / f"{country_id}.trace.tro.jsonld"
         country_manifest = get_release_manifest(country_id)
@@ -63,7 +74,9 @@ def generated_tros() -> list[tuple[Path, bytes]]:
             model_wheel_url=country_manifest.model_package.wheel_url,
             emission_context={"pe:emittedIn": "repository-bundle"},
         )
-        payloads.append((tro_path, serialize_trace_tro(tro)))
+        payload = serialize_trace_tro(tro)
+        validator.validate(json.loads(payload))
+        payloads.append((tro_path, payload))
     return payloads
 
 
