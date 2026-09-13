@@ -7,7 +7,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -1031,19 +1033,62 @@ def test_ci_scopes_country_access_and_preserves_guard_receipts():
             assert release.re.fullmatch(r"[^@]+@[0-9a-f]{40}", step["uses"])
 
 
-def test_source_origin_rejects_previously_imported_other_checkout(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setenv("POLICYENGINE_SKIP_COUNTRY_IMPORTS", "1")
-    monkeypatch.syspath_prepend(str(ROOT / "src"))
-    actual = release.assert_source_origin(ROOT)
+def test_source_origin_rejects_previously_imported_other_checkout(tmp_path):
+    # Production source_command starts fresh. Other test collectors deliberately
+    # create synthetic policyengine modules, which must not enter this control.
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"PYTHONHOME", "PYTHONUSERBASE"}
+    }
+    env.update(
+        POLICYENGINE_SKIP_COUNTRY_IMPORTS="1",
+        PYTHONPATH=str(ROOT / "src"),
+        PYTHONDONTWRITEBYTECODE="1",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-s",
+            "-c",
+            """
+import json
+import sys
+from pathlib import Path
+
+root, other = map(Path, sys.argv[1:])
+sys.path.insert(0, str(root / "scripts"))
+import release_build
+
+actual = release_build.assert_source_origin(root)
+sys.path.insert(0, str(other / "src"))
+try:
+    release_build.assert_source_origin(other)
+except ValueError as error:
+    assert "source origin" in str(error)
+else:
+    raise AssertionError("Cached imports from the original source were accepted")
+assert "policyengine_us" not in sys.modules
+assert "policyengine_uk" not in sys.modules
+print(json.dumps(actual))
+""",
+            str(ROOT),
+            str(tmp_path),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    actual = json.loads(result.stdout)
     assert actual["resources"] == "src/policyengine"
     assert actual["modules"]["policyengine.provenance.trace"].startswith(
         "src/policyengine/"
     )
-    monkeypatch.syspath_prepend(str(tmp_path / "src"))
-    with pytest.raises(ValueError, match="source origin"):
-        release.assert_source_origin(tmp_path)
 
 
 @pytest.mark.parametrize(
