@@ -1273,16 +1273,16 @@ wheels = [
 
 [[package]]
 name = "microdf-python"
-version = "1.3.0"
+version = "1.5.10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pandas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a3/1b/a4b6a53c8e6668c190e1928ebf9f8c67d6a4995ff4a4b0e3403ded30d4ab/microdf_python-1.3.0.tar.gz", hash = "sha256:f352fe32c25a4fd6d6188ef6aaca0214b53b29a8a7913aca6af0362dd9c922bd", size = 28141, upload-time = "2026-04-17T23:20:57.018Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f5/57/46cdaa4c25af3c4d7474c14809da4e60c06f7f6163cd99c568cd143c8008/microdf_python-1.5.10.tar.gz", hash = "sha256:4bd09d44a34a0893309e027e81f4e949598ce0953d3a7b93d3e01018285081b4", size = 67848, upload-time = "2026-09-18T15:20:55.214Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b9/aa/ce692e0488b5e6c0943f52886cf6a15f5d9a6dee7744b190a3a1d67f5d6e/microdf_python-1.3.0-py3-none-any.whl", hash = "sha256:e17757a198648108eae24f39384e27b5ae8061acf1b43fa56520010dc00a7b55", size = 28908, upload-time = "2026-04-17T23:20:56.051Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/02/0a59120a8cb6a3d2f0393192168b5e0debf265f2f968cd76c8735c0d9db2/microdf_python-1.5.10-py3-none-any.whl", hash = "sha256:ce9024f18f6f83161c36c95a181f857959127668ecb83c49e68ff3fa1b13bd37", size = 75946, upload-time = "2026-09-18T15:20:54.079Z" },
 ]
 
 [[package]]
@@ -1873,7 +1873,7 @@ requires-dist = [
     { name = "itables", marker = "extra == 'dev'" },
     { name = "jsonschema", specifier = ">=4.0.0" },
     { name = "jupyter-book", marker = "extra == 'dev'" },
-    { name = "microdf-python", specifier = ">=1.3.0,<1.4" },
+    { name = "microdf-python", specifier = ">=1.5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11.0" },
     { name = "networkx", marker = "extra == 'graph'", specifier = ">=3.0" },
     { name = "packaging", specifier = ">=23.0" },

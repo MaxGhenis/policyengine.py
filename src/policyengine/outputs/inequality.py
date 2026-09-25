@@ -1,13 +1,19 @@
 """Inequality analysis output types."""
 
+import warnings
 from enum import Enum
 from typing import Any, Optional, Union
 
 import numpy as np
 import pandas as pd
+from microdf import MicroSeries
 from pydantic import ConfigDict
 
 from policyengine.core import Output, Simulation
+
+# Start of the UserWarning microdf's MicroSeries.gini() emits when any value
+# is negative.
+_MICRODF_NEGATIVE_VALUES_WARNING = r"gini\(\) called on data containing negative values"
 
 
 class USInequalityPreset(str, Enum):
@@ -17,43 +23,58 @@ class USInequalityPreset(str, Enum):
     CBO_COMPARABLE = "cbo_comparable"
 
 
-def _gini(values: np.ndarray, weights: np.ndarray) -> float:
-    """Calculate weighted Gini coefficient.
+def _weighted_inequality(values: np.ndarray, weights: np.ndarray) -> dict[str, float]:
+    """Calculate the weighted Gini coefficient and income shares.
+
+    Uses microdf's ``MicroSeries.gini``, ``top_10_pct_share``,
+    ``top_1_pct_share`` and ``bottom_50_pct_share``. The record that
+    straddles a share cutoff contributes only the part of its weight that
+    lies on the requested side. Negative values are included as they are.
+
+    microdf returns NaN for some degenerate inputs, so this module's own
+    contract is applied first: the Gini is 0.0 when there are no records,
+    the weights sum to zero or total weighted income is zero; the shares are
+    0.0 when there are no records, the weights sum to zero or less, or total
+    weighted income is zero or less.
 
     Args:
         values: Array of income values
         weights: Array of weights
 
     Returns:
-        Gini coefficient between 0 (perfect equality) and 1 (perfect inequality)
+        Dict with ``gini``, ``top_10_share``, ``top_1_share`` and
+        ``bottom_50_share``.
     """
-    # Handle edge cases
-    if len(values) == 0 or weights.sum() == 0:
-        return 0.0
+    total_weight = weights.sum()
+    total_income = np.sum(values * weights)
+    series = MicroSeries(values, weights=weights)
 
-    # Sort by values
-    sorted_indices = np.argsort(values)
-    sorted_values = values[sorted_indices]
-    sorted_weights = weights[sorted_indices]
+    if len(values) == 0 or total_weight == 0 or total_income == 0:
+        gini = 0.0
+    else:
+        with warnings.catch_warnings():
+            # Negative incomes are real and have always been included unclipped.
+            warnings.filterwarnings(
+                "ignore",
+                message=_MICRODF_NEGATIVE_VALUES_WARNING,
+                category=UserWarning,
+            )
+            gini = float(series.gini())
 
-    # Cumulative weights and weighted values
-    cumulative_weights = np.cumsum(sorted_weights)
-    total_weight = cumulative_weights[-1]
-    cumulative_weighted_values = np.cumsum(sorted_values * sorted_weights)
-    total_weighted_value = cumulative_weighted_values[-1]
+    if len(values) == 0 or total_weight <= 0 or total_income <= 0:
+        return {
+            "gini": gini,
+            "top_10_share": 0.0,
+            "top_1_share": 0.0,
+            "bottom_50_share": 0.0,
+        }
 
-    if total_weighted_value == 0:
-        return 0.0
-
-    # Calculate Gini using the area formula
-    # Gini = 1 - 2 * (area under Lorenz curve)
-    lorenz_curve = cumulative_weighted_values / total_weighted_value
-    weight_fractions = sorted_weights / total_weight
-
-    # Area under Lorenz curve using trapezoidal rule
-    area = np.sum(weight_fractions * (lorenz_curve - weight_fractions / 2))
-
-    return float(1 - 2 * area)
+    return {
+        "gini": gini,
+        "top_10_share": float(series.top_10_pct_share()),
+        "top_1_share": float(series.top_1_pct_share()),
+        "bottom_50_share": float(series.bottom_50_pct_share()),
+    }
 
 
 def _series_for_entity(
@@ -177,54 +198,11 @@ class Inequality(Output):
                 equivalization_arr[valid_mask], self.equivalization_power
             )
 
-        # Calculate Gini coefficient
-        self.gini = _gini(values, weights_arr)
-
-        # Calculate income shares
-        if len(values) > 0 and weights_arr.sum() > 0:
-            total_income = np.sum(values * weights_arr)
-
-            if total_income > 0:
-                # Sort by income
-                sorted_indices = np.argsort(values)
-                sorted_values = values[sorted_indices]
-                sorted_weights = weights_arr[sorted_indices]
-
-                # Cumulative weight fractions
-                cumulative_weights = np.cumsum(sorted_weights)
-                total_weight = cumulative_weights[-1]
-                weight_fractions = cumulative_weights / total_weight
-
-                # Top 10% share
-                top_10_mask = weight_fractions > 0.9
-                self.top_10_share = float(
-                    np.sum(sorted_values[top_10_mask] * sorted_weights[top_10_mask])
-                    / total_income
-                )
-
-                # Top 1% share
-                top_1_mask = weight_fractions > 0.99
-                self.top_1_share = float(
-                    np.sum(sorted_values[top_1_mask] * sorted_weights[top_1_mask])
-                    / total_income
-                )
-
-                # Bottom 50% share
-                bottom_50_mask = weight_fractions <= 0.5
-                self.bottom_50_share = float(
-                    np.sum(
-                        sorted_values[bottom_50_mask] * sorted_weights[bottom_50_mask]
-                    )
-                    / total_income
-                )
-            else:
-                self.top_10_share = 0.0
-                self.top_1_share = 0.0
-                self.bottom_50_share = 0.0
-        else:
-            self.top_10_share = 0.0
-            self.top_1_share = 0.0
-            self.bottom_50_share = 0.0
+        measures = _weighted_inequality(values, weights_arr)
+        self.gini = measures["gini"]
+        self.top_10_share = measures["top_10_share"]
+        self.top_1_share = measures["top_1_share"]
+        self.bottom_50_share = measures["bottom_50_share"]
 
 
 # Default income variables for each country
