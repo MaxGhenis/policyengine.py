@@ -16,6 +16,10 @@ from microdf import MicroDataFrame
 from pydantic import Field, ValidationInfo, field_serializer, field_validator
 
 from policyengine.core import Dataset, YearData
+from policyengine.tax_benefit_models.axiom import (
+    frame_from_household_tables,
+    weighted_tables_from_frame,
+)
 
 from .serialization import decode_table, encode_table
 
@@ -106,60 +110,21 @@ def frame_from_tables(
     metadata: Optional[dict[str, Any]] = None,
 ) -> Any:
     """Validate NZ structure and construct a household-weighted Frame."""
-    if set(tables) != set(ENTITIES):
-        raise ValueError(f"NZ requires exactly the entity tables {ENTITIES}.")
-    copies = {entity: pd.DataFrame(table).copy() for entity, table in tables.items()}
-    effective: dict[str, np.ndarray] = {}
-    for entity, table in copies.items():
-        for column in list(table.columns):
-            if not column.endswith("_weight"):
-                continue
-            owner = column.removesuffix("_weight")
-            if owner != entity or (
-                owner != "household" and not allow_effective_weights
-            ):
-                raise ValueError(
-                    "NZ household_weight must be the sole stored weight vector."
-                )
-            if owner != "household":
-                effective[owner] = table.pop(column).to_numpy()
-    _validate_family_nesting(copies)
-    Frame, WeightKind, Weights, schema = _load_frame_runtime()
-    values = copies["household"].pop("household_weight").to_numpy()
-    person = copies["person"]
-    strata = person["support_stratum"] if "support_stratum" in person else None
-    frame = Frame(
-        copies,
-        schema,
-        {
-            "household": Weights(
-                values=values,
-                kind=WeightKind.CALIBRATED
-                if weight_kind == "calibrated"
-                else WeightKind.DESIGN,
-            )
-        },
-        strata,
+    return frame_from_household_tables(
+        tables,
+        entities=ENTITIES,
+        runtime_loader=_load_frame_runtime,
+        country_label="NZ",
+        allow_effective_weights=allow_effective_weights,
+        weight_kind=weight_kind,
         metadata=metadata,
+        table_validator=_validate_family_nesting,
     )
-    for entity, prior in effective.items():
-        resolved = frame.resolve_weights(entity).values
-        if not np.array_equal(prior, resolved):
-            raise ValueError(
-                f"NZ effective {entity}_weight differs from Frame-resolved household weights."
-            )
-    return frame
 
 
 def year_data_from_frame(frame: Any) -> NZYearData:
     """Expose Frame-resolved weights through PolicyEngine MicroDataFrames."""
-    tables = {}
-    for entity in ENTITIES:
-        table = frame.table(entity).copy()
-        column = f"{entity}_weight"
-        table[column] = frame.resolve_weights(entity).values
-        tables[entity] = MicroDataFrame(table, weights=column)
-    return NZYearData(**tables)
+    return NZYearData(**weighted_tables_from_frame(frame, ENTITIES))
 
 
 class PopulaceNewZealandDataset(Dataset):

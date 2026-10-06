@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
 class TaxBenefitModelVersion(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
+
+    accepts_policyengine_overlays: ClassVar[bool] = True
 
     id: str = Field(default_factory=lambda: str(uuid4()))
     model: TaxBenefitModel

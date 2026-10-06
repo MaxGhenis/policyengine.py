@@ -118,6 +118,12 @@ class Simulation(BaseModel):
                     "tax_benefit_model_version; pass model_version or a "
                     f"{field.capitalize()}."
                 )
+            if not self.tax_benefit_model_version.accepts_policyengine_overlays:
+                raise ValueError(
+                    f"{self.tax_benefit_model_version.id} does not accept "
+                    "PolicyEngine policy dictionaries or dynamic dictionaries; "
+                    "select a separately signed policy artifact instead."
+                )
             setattr(
                 self,
                 field,
